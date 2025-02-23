@@ -1,101 +1,147 @@
-
-import "./App.css"
+import "./App.css";
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
-import useClipboard from "react-use-clipboard";
-import {useState} from "react";
-
+import { useState, useEffect } from "react";
 import ReactPlayer from 'react-player';
-
+import icon from "./therapy_ai.png";
 
 const App = () => {
     const [textToCopy, setTextToCopy] = useState();
-    const [videoUrl, setVideoUrl] = useState(null);
-    const [isCopied, setCopied] = useClipboard(textToCopy, {
-        successDuration:1000
-    });
+    const [videoUrl, setVideoUrl] = useState("");
+    const [chatHistory, setChatHistory] = useState([]);
+    const [isListening, setIsListening] = useState(false);
+    const {transcript, browserSupportsSpeechRecognition, resetTranscript } = useSpeechRecognition();
+    
 
-    //subscribe to thapa technical for more awesome videos
-
-
-      const handleStopListening = async () => {
+    const handleStopListening = async () => {
         try {
             await SpeechRecognition.stopListening();
+            setIsListening(false);
+            // setChatHistory(true);
             const sanitizedText = encodeURIComponent(transcript);
-    
+
+            const currentTranscript = transcript;
+            resetTranscript();
+            
             const response = await fetch('http://localhost:8000/receive-data', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ text: sanitizedText }),
+                body: JSON.stringify({ text: sanitizedText, 
+                    // user_id: userId,  // Add user ID
+                    timestamp: new Date().toISOString()  // Add timestamp
+            }),
             });
-    
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            
+
             const responseData = await response.json();
-            console.log('Full response:', responseData);
-            
-            // Set both text and video URL
+            setChatHistory(prev => [
+                ...prev,
+                { 
+                    text: currentTranscript, 
+                    isUser: true, 
+                    time: new Date().toLocaleTimeString(),
+                    id: Date.now() + 'user'
+                },
+                { 
+                    text: responseData.text_response, 
+                    isUser: false, 
+                    time: new Date().toLocaleTimeString(),
+                    id: Date.now() + 'bot'
+                }
+            ]);
             setTextToCopy(responseData.text_response);
             setVideoUrl(responseData.video_url);
-            console.log(videoUrl)
-    
+            setIsListening(false);
         } catch (error) {
             console.error('Operation failed:', error);
         }
     };
-    
-    
 
-    const startListening = () => SpeechRecognition.startListening({ continuous: true, language: 'en-IN' });
-    const { transcript, browserSupportsSpeechRecognition } = useSpeechRecognition();
+    const startListening = () => {
+        // ADD THIS LINE AT START
+        resetTranscript(); // Clear previous transcript
+        SpeechRecognition.startListening({ continuous: true, language: 'en-IN' });
+        setIsListening(true);
+    };
 
-    if (!browserSupportsSpeechRecognition) {
-        return null
-    }
+
+    if (!browserSupportsSpeechRecognition) return null;
+
 
     return (
-        <>
-            <div className="container">
-                <h2>Speech to Text Converter</h2>
-                <br/>
-                <p>A React hook that converts speech from the microphone to text and makes it available to your React
-                    components.</p>
-
-                <div className="main-content" onClick={() =>  setTextToCopy(transcript)}>
-                    {transcript}
+        <div className="container">
+            {/* Header */}
+            <div className="header">
+                <div className="header-content">
+                    <img src={icon} alt="Logo" className="logo" />
+                    <div className="header-text">
+                        <h1>Therapy.ai</h1>
+                        <p>Your Mental Wellness Companion</p>
+                    </div>
+                    <div className={`status-indicator ${isListening ? 'listening' : ''}`}></div>
                 </div>
-
-                <div className="btn-style">
-
-                    {/* <button onClick={setCopied}>
-                        {isCopied ? 'Copied!' : 'Copy to clipboard'}
-                    </button> */}
-                    <button onClick={startListening}>Start Listening</button>
-                    <button onClick={SpeechRecognition.stopListening}>Stop Listening</button>
-                    <button 
-                        onClick={handleStopListening}
-                        // disabled={!isListening}
-                    >
-                            Stop Listening & Send
-                    </button>
-
-                    // Add in your return statement
-                    {videoUrl && (
-                        <div className="video-container">
-                            <ReactPlayer 
-                                url={videoUrl}
-                                controls={true}
-                                width="100%"
-                                height="400px"
-                            />
-                        </div>
-                    )}
-
-
-                </div>
-
             </div>
 
-        </>
+            {/* Main Content */}
+            <div className="main-content">
+                {/* Chat Container */}
+                <div className="chat-container">
+                    <div className="chat-history">
+                        {chatHistory.map((msg) => (
+                            <div key={msg.id} className={`message ${msg.isUser ? 'user' : 'bot'}`}>
+                                <div className="message-bubble">
+                                    <p>{msg.text}</p>
+                                    <span className="message-time">{msg.time}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div className="transcript-box">
+                        {transcript || "Start speaking to begin your session..."}
+                        <div className={`recording-indicator ${isListening ? 'active' : ''}`}>
+                            <div className="pulse"></div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Video Panel */}
+                <div className="video-panel">
+                    {videoUrl && (
+                        <ReactPlayer
+                            url={videoUrl}
+                            controls
+                            width="100%"
+                            height="100%"
+                            config={{ file: { attributes: { controlsList: 'nodownload' } } }}
+                        />
+                    )}
+                    {!videoUrl && (
+                        <div className="video-placeholder">
+                            <p>Video response will appear here</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Control Bar */}
+            <div className="control-bar">
+                <button 
+                    className={`control-btn ${isListening ? 'active' : ''}`}
+                    onClick={startListening}
+                    disabled={isListening}
+                >
+                    <span className="mic-icon"></span>
+                    {isListening ? 'Listening...' : 'Start Session'}
+                </button>
+                <button
+                    className="control-btn stop-btn"
+                    onClick={handleStopListening}
+                    disabled={!isListening}
+                >
+                    <span className="stop-icon"></span>
+                    End Session
+                </button>
+            </div>
+        </div>
     );
 };
 
